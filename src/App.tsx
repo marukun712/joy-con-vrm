@@ -3,10 +3,12 @@ import * as JoyCon from "joy-con-webhid";
 import { type Component, onMount } from "solid-js";
 import {
 	AmbientLight,
+	type AnimationAction,
 	AnimationMixer,
 	BackSide,
 	BoxGeometry,
 	DirectionalLight,
+	LoopOnce,
 	LoopRepeat,
 	Mesh,
 	MeshStandardMaterial,
@@ -25,6 +27,8 @@ const App: Component = () => {
 	let vrm: VRM;
 	let currentValue: number | null = null;
 	const alpha = 0.9;
+	let state: "move" | "normal" = "normal";
+	let actions: { idle: AnimationAction; jump: AnimationAction };
 
 	onMount(async () => {
 		const scene = new Scene();
@@ -73,10 +77,23 @@ const App: Component = () => {
 		vrm.scene.position.set(0, -1.5, 0);
 
 		const idle = await loadMixamoAnimation("/models/animations/Idle.fbx", vrm);
+		const jump = await loadMixamoAnimation("/models/animations/Jump.fbx", vrm);
 		mixer = new AnimationMixer(vrm.scene);
-		const clip = mixer.clipAction(idle);
-		clip.setLoop(LoopRepeat, Infinity);
-		clip.play();
+
+		actions = {
+			idle: mixer.clipAction(idle),
+			jump: mixer.clipAction(jump),
+		};
+		actions.idle.setLoop(LoopRepeat, Infinity);
+		actions.jump.setLoop(LoopOnce, 1);
+		actions.jump.clampWhenFinished = true;
+
+		actions.idle.play();
+
+		mixer.addEventListener("finished", () => {
+			actions.idle.reset().fadeIn(0.3).play();
+			actions.jump.fadeOut(0.3);
+		});
 
 		async function animate() {
 			timer.update();
@@ -109,7 +126,16 @@ const App: Component = () => {
 						return;
 					}
 					currentValue = alpha * currentValue + (1 - alpha) * norm;
-					if (currentValue < 0.6) console.log("up");
+					if (currentValue < 0.5) {
+						const before = state;
+						state = "move";
+						if (before === "normal") {
+							actions.idle.fadeOut(0.3);
+							actions.jump.reset().fadeIn(0.3).play();
+						}
+					} else {
+						state = "normal";
+					}
 				});
 				joyCon.eventListenerAttached = true;
 			}

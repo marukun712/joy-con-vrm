@@ -23,6 +23,8 @@
 		"joy-con-webhid": "^0.11.0",
 		"postprocessing": "^6.38.3",
 		"solid-js": "^1.9.5",
-		"three": "^0.183.2"
+		"three": "^0.183.2",
+		"utsuroi": "^1.0.1",
+		"xstate": "^5.28.0"
 	}
 }
