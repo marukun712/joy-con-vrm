@@ -48,6 +48,20 @@ const App: Component = () => {
 		renderer.outputColorSpace = SRGBColorSpace;
 		renderer.toneMapping = NoToneMapping;
 		renderer.toneMappingExposure = 1.0;
+		renderer.xr.enabled = true;
+
+		const { LookingGlassWebXRPolyfill } = await import(
+			//@ts-expect-error
+			"@lookingglass/webxr"
+		);
+		const lookingGlassWebXR = new LookingGlassWebXRPolyfill({
+			tileHeight: 512,
+			numViews: 45,
+			targetY: 0,
+			targetZ: 0,
+			targetDiam: 3,
+			fovy: (14 * Math.PI) / 180,
+		});
 
 		document.body.appendChild(renderer.domElement);
 
@@ -98,6 +112,9 @@ const App: Component = () => {
 		async function animate() {
 			timer.update();
 			const delta = timer.getDelta();
+			lookingGlassWebXR.update({
+				numViews: 80,
+			});
 			if (vrm) vrm.update(delta);
 			if (mixer) mixer.update(delta);
 			renderer.render(scene, camera);
