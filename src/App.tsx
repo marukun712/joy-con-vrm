@@ -3,17 +3,30 @@ import * as JoyCon from "joy-con-webhid";
 import { type Component, onMount } from "solid-js";
 import {
 	AmbientLight,
+	AnimationMixer,
+	BackSide,
+	BoxGeometry,
+	DirectionalLight,
+	LoopRepeat,
+	Mesh,
+	MeshStandardMaterial,
+	NoToneMapping,
 	PerspectiveCamera,
 	Scene,
+	SRGBColorSpace,
 	Timer,
 	WebGLRenderer,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/Addons.js";
+import { loadMixamoAnimation } from "./lib/loadMixamoAnimation";
 
 const App: Component = () => {
+	let mixer: AnimationMixer;
 	let vrm: VRM;
+	let currentValue: number | null = null;
+	const alpha = 0.9;
 
-	onMount(() => {
+	onMount(async () => {
 		const scene = new Scene();
 		const camera = new PerspectiveCamera(
 			75,
@@ -21,57 +34,69 @@ const App: Component = () => {
 			0.1,
 			1000,
 		);
-		const light = new AmbientLight(0xffffff, 3);
-		scene.add(light);
-		camera.position.set(0, 0.9, 1.3);
+		camera.position.set(0, -0.5, 1.3);
+		const timer = new Timer();
 
-		const renderer = new WebGLRenderer();
+		const renderer = new WebGLRenderer({ antialias: true });
 		renderer.setSize(window.innerWidth, window.innerHeight);
+		renderer.setPixelRatio(window.devicePixelRatio);
+		renderer.shadowMap.enabled = true;
+		renderer.outputColorSpace = SRGBColorSpace;
+		renderer.toneMapping = NoToneMapping;
+		renderer.toneMappingExposure = 1.0;
+
 		document.body.appendChild(renderer.domElement);
 
-		const loader = new GLTFLoader();
-		loader.register((p) => {
-			return new VRMLoaderPlugin(p);
-		});
+		const light = new AmbientLight(0xffffff, 2.0);
+		scene.add(light);
+		const dirLight = new DirectionalLight(0xffffff, 1.0);
+		dirLight.position.set(2, 4, 2);
+		dirLight.castShadow = true;
+		scene.add(dirLight);
 
-		loader.load(
-			"/models/polka.vrm",
-
-			(gltf) => {
-				vrm = gltf.userData.vrm;
-				scene.add(vrm.scene);
-
-				vrm.scene.rotation.y = 2 * Math.PI;
-				vrm.scene.position.set(0, 0, 0);
-			},
-
-			(progress) =>
-				console.log(
-					"Loading model...",
-					100.0 * (progress.loaded / progress.total),
-					"%",
-				),
-			(error) => console.error(error),
+		const box = new Mesh(
+			new BoxGeometry(3, 3, 3),
+			new MeshStandardMaterial({ color: 0xffffff, side: BackSide }),
 		);
+		box.receiveShadow = true;
+		scene.add(box);
+
+		const loader = new GLTFLoader();
+		loader.register((p) => new VRMLoaderPlugin(p));
+		const gltf = await loader.loadAsync("/models/polka.vrm");
+		vrm = gltf.userData.vrm;
+		vrm.scene.traverse((obj) => {
+			obj.castShadow = true;
+		});
+		scene.add(vrm.scene);
+		vrm.scene.rotation.y = Math.PI;
+		vrm.scene.position.set(0, -1.5, 0);
+
+		const idle = await loadMixamoAnimation("/models/animations/Idle.fbx", vrm);
+		mixer = new AnimationMixer(vrm.scene);
+		const clip = mixer.clipAction(idle);
+		clip.setLoop(LoopRepeat, Infinity);
+		clip.play();
 
 		async function animate() {
-			const timer = new Timer();
+			timer.update();
 			const delta = timer.getDelta();
-
-			if (vrm) {
-				vrm.update(delta);
-			}
+			if (vrm) vrm.update(delta);
+			if (mixer) mixer.update(delta);
 			renderer.render(scene, camera);
+		}
+		renderer.setAnimationLoop(animate);
+	});
 
+	const startTracking = async () => {
+		await JoyCon.connectJoyCon();
+		setInterval(async () => {
 			for (const joyCon of JoyCon.connectedJoyCons.values()) {
-				if (joyCon.eventListenerAttached) {
-					continue;
-				}
+				if (joyCon.eventListenerAttached) continue;
 				await joyCon.open();
 				await joyCon.enableStandardFullMode();
 				await joyCon.enableIMUMode();
 				await joyCon.enableVibration();
-
 				// @ts-expect-error
 				joyCon.addEventListener("hidinput", ({ detail }) => {
 					const norm = Math.sqrt(
@@ -79,26 +104,24 @@ const App: Component = () => {
 							detail.accelerometers[2].y.acc ** 2 +
 							detail.accelerometers[2].z.acc ** 2,
 					);
-					if (norm < 0.8) {
-						console.log("up");
+					if (currentValue === null) {
+						currentValue = norm;
+						return;
 					}
-
-					if (norm > 1.2) {
-						console.log("down");
-					}
+					currentValue = alpha * currentValue + (1 - alpha) * norm;
+					if (currentValue < 0.6) console.log("up");
 				});
 				joyCon.eventListenerAttached = true;
 			}
-		}
-		renderer.setAnimationLoop(animate);
-	});
-
-	const startTracking = async () => {
-		await JoyCon.connectJoyCon();
+		}, 2000);
 	};
 
 	return (
-		<button type="button" onclick={startTracking}>
+		<button
+			type="button"
+			style={{ position: "absolute" }}
+			onclick={startTracking}
+		>
 			Start Tracking
 		</button>
 	);

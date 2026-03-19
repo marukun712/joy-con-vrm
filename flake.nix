@@ -23,7 +23,6 @@
         devShell = pkgs.mkShell {
           buildInputs = [
             pkgs.bun
-            pkgs.opencode
           ];
         };
       }
