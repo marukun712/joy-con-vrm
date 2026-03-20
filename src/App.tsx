@@ -19,7 +19,7 @@ import {
 	Timer,
 	WebGLRenderer,
 } from "three";
-import { GLTFLoader } from "three/examples/jsm/Addons.js";
+import { GLTFLoader, VRButton } from "three/examples/jsm/Addons.js";
 import { loadMixamoAnimation } from "./lib/loadMixamoAnimation";
 
 const App: Component = () => {
@@ -38,7 +38,7 @@ const App: Component = () => {
 			0.1,
 			1000,
 		);
-		camera.position.set(0, -0.5, 1.3);
+		camera.position.set(0, 0, 1.4);
 		const timer = new Timer();
 
 		const renderer = new WebGLRenderer({ antialias: true });
@@ -54,16 +54,15 @@ const App: Component = () => {
 			//@ts-expect-error
 			"@lookingglass/webxr"
 		);
-		const lookingGlassWebXR = new LookingGlassWebXRPolyfill({
-			tileHeight: 512,
-			numViews: 45,
-			targetY: 0,
+		new LookingGlassWebXRPolyfill({
+			targetY: -0.2,
 			targetZ: 0,
-			targetDiam: 3,
+			targetDiam: 1.8,
 			fovy: (14 * Math.PI) / 180,
 		});
 
 		document.body.appendChild(renderer.domElement);
+		document.body.appendChild(VRButton.createButton(renderer));
 
 		const light = new AmbientLight(0xffffff, 2.0);
 		scene.add(light);
@@ -87,8 +86,8 @@ const App: Component = () => {
 			obj.castShadow = true;
 		});
 		scene.add(vrm.scene);
-		vrm.scene.rotation.y = Math.PI;
-		vrm.scene.position.set(0, -1.5, 0);
+		vrm.scene.rotation.y = 2 * Math.PI;
+		vrm.scene.position.set(0, -1.0, 0);
 
 		const idle = await loadMixamoAnimation("/models/animations/Idle.fbx", vrm);
 		const jump = await loadMixamoAnimation("/models/animations/Jump.fbx", vrm);
@@ -109,12 +108,23 @@ const App: Component = () => {
 			actions.jump.fadeOut(0.3);
 		});
 
+		onResize();
+		window.addEventListener("resize", onResize);
+
+		function onResize() {
+			const width = window.innerWidth;
+			const height = window.innerHeight;
+
+			renderer.setPixelRatio(devicePixelRatio);
+			renderer.setSize(width, height);
+
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+		}
+
 		async function animate() {
 			timer.update();
 			const delta = timer.getDelta();
-			lookingGlassWebXR.update({
-				numViews: 80,
-			});
 			if (vrm) vrm.update(delta);
 			if (mixer) mixer.update(delta);
 			renderer.render(scene, camera);
