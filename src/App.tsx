@@ -20,15 +20,87 @@ import {
 	WebGLRenderer,
 } from "three";
 import { GLTFLoader, VRButton } from "three/examples/jsm/Addons.js";
+import { type ActorRefFrom, createActor, createMachine } from "xstate";
 import { loadMixamoAnimation } from "./lib/loadMixamoAnimation";
 
 const App: Component = () => {
+	const createMotionMachine = (
+		actions: {
+			idle: AnimationAction;
+			walk: AnimationAction;
+			jump: AnimationAction;
+			react: AnimationAction;
+		},
+		vrm: VRM,
+	) =>
+		createMachine({
+			id: "motion",
+			initial: "idle",
+			states: {
+				idle: {
+					entry: () => {
+						actions.walk.fadeOut(0.3);
+						actions.jump.fadeOut(0.3);
+						actions.react.fadeOut(0.3);
+						actions.idle.reset().fadeIn(0.3).play();
+						vrm.expressionManager?.setValue("happy", 0);
+						vrm.expressionManager?.setValue("surprised", 0);
+						vrm.expressionManager?.setValue("sad", 0);
+						vrm.expressionManager?.setValue("relaxed", 1);
+					},
+					on: { WALK: "walk", JUMP: "jump" },
+				},
+				walk: {
+					entry: () => {
+						actions.idle.fadeOut(0.3);
+						actions.jump.fadeOut(0.3);
+						actions.walk.reset().fadeIn(0.3).play();
+						vrm.expressionManager?.setValue("relaxed", 0);
+						vrm.expressionManager?.setValue("surprised", 0);
+						vrm.expressionManager?.setValue("sad", 0);
+						vrm.expressionManager?.setValue("happy", 1);
+					},
+					on: { IDLE: "react", JUMP: "jump" },
+				},
+				react: {
+					entry: () => {
+						actions.idle.fadeOut(0.3);
+						actions.walk.fadeOut(0.3);
+						actions.react.reset().fadeIn(0.3).play();
+						vrm.expressionManager?.setValue("happy", 0);
+						vrm.expressionManager?.setValue("relaxed", 0);
+						vrm.expressionManager?.setValue("surprised", 1);
+						vrm.expressionManager?.setValue("sad", 0);
+					},
+					on: { REACT_END: "idle" },
+				},
+				jump: {
+					entry: () => {
+						actions.idle.fadeOut(0.3);
+						actions.walk.fadeOut(0.3);
+						actions.react.fadeOut(0.3);
+						actions.jump.reset().fadeIn(0.1).play();
+						vrm.expressionManager?.setValue("happy", 0);
+						vrm.expressionManager?.setValue("relaxed", 0);
+						vrm.expressionManager?.setValue("sad", 0);
+						vrm.expressionManager?.setValue("surprised", 1);
+					},
+					on: { JUMP_END: "idle" },
+				},
+			},
+		});
+
 	let mixer: AnimationMixer;
 	let vrm: VRM;
-	let currentValue: number | null = null;
+	let prev: number | null = null;
 	const alpha = 0.9;
-	let state: "move" | "normal" = "normal";
-	let actions: { idle: AnimationAction; jump: AnimationAction };
+	let actions: {
+		idle: AnimationAction;
+		jump: AnimationAction;
+		walk: AnimationAction;
+		react: AnimationAction;
+	};
+	let actor: ActorRefFrom<typeof createMotionMachine>;
 
 	onMount(async () => {
 		const scene = new Scene();
@@ -86,26 +158,39 @@ const App: Component = () => {
 			obj.castShadow = true;
 		});
 		scene.add(vrm.scene);
-		vrm.scene.rotation.y = 2 * Math.PI;
 		vrm.scene.position.set(0, -1.0, 0);
 
 		const idle = await loadMixamoAnimation("/models/animations/Idle.fbx", vrm);
 		const jump = await loadMixamoAnimation("/models/animations/Jump.fbx", vrm);
+		const walk = await loadMixamoAnimation(
+			"/models/animations/Walking.fbx",
+			vrm,
+		);
+		const react = await loadMixamoAnimation(
+			"/models/animations/Reacting.fbx",
+			vrm,
+		);
 		mixer = new AnimationMixer(vrm.scene);
 
 		actions = {
 			idle: mixer.clipAction(idle),
 			jump: mixer.clipAction(jump),
+			walk: mixer.clipAction(walk),
+			react: mixer.clipAction(react),
 		};
 		actions.idle.setLoop(LoopRepeat, Infinity);
 		actions.jump.setLoop(LoopOnce, 1);
 		actions.jump.clampWhenFinished = true;
-
+		actions.walk.setLoop(LoopRepeat, Infinity);
+		actions.react.setLoop(LoopOnce, 1);
+		actions.react.clampWhenFinished = true;
 		actions.idle.play();
+		const motionMachine = createMotionMachine(actions, vrm);
+		actor = createActor(motionMachine).start();
 
-		mixer.addEventListener("finished", () => {
-			actions.idle.reset().fadeIn(0.3).play();
-			actions.jump.fadeOut(0.3);
+		mixer.addEventListener("finished", (e) => {
+			if (e.action === actions.jump) actor.send({ type: "JUMP_END" });
+			if (e.action === actions.react) actor.send({ type: "REACT_END" });
 		});
 
 		onResize();
@@ -134,6 +219,9 @@ const App: Component = () => {
 
 	const startTracking = async () => {
 		await JoyCon.connectJoyCon();
+		const fps = 60;
+		const windows: number[] = [];
+		let frame: number[] = [];
 		setInterval(async () => {
 			for (const joyCon of JoyCon.connectedJoyCons.values()) {
 				if (joyCon.eventListenerAttached) continue;
@@ -148,21 +236,33 @@ const App: Component = () => {
 							detail.accelerometers[2].y.acc ** 2 +
 							detail.accelerometers[2].z.acc ** 2,
 					);
-					if (currentValue === null) {
-						currentValue = norm;
+					if (prev === null) {
+						prev = norm;
 						return;
 					}
-					currentValue = alpha * currentValue + (1 - alpha) * norm;
-					if (currentValue < 0.5) {
-						const before = state;
-						state = "move";
-						if (before === "normal") {
-							actions.idle.fadeOut(0.3);
-							actions.jump.reset().fadeIn(0.3).play();
+					prev = alpha * prev + (1 - alpha) * norm;
+					const high = norm - prev;
+
+					if (frame.length === fps * 1) {
+						const rms = Math.sqrt(
+							frame.reduce((a, b) => a + b ** 2, 0) / frame.length,
+						);
+						windows.push(rms);
+						if (windows.length > 4) {
+							windows.shift();
 						}
-					} else {
-						state = "normal";
+						frame = [];
 					}
+
+					if (windows.length >= 4 && windows.slice(-3).every((v) => v > 0.13)) {
+						actor.send({ type: "WALK" });
+					} else if (prev < 0.5) {
+						actor.send({ type: "JUMP" });
+					} else {
+						actor.send({ type: "IDLE" });
+					}
+
+					frame.push(high);
 				});
 				joyCon.eventListenerAttached = true;
 			}
