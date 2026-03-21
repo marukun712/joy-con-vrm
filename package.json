@@ -21,6 +21,7 @@
 		"@lookingglass/webxr": "^0.6.0",
 		"@pixiv/three-vrm": "^3.5.1",
 		"@types/three": "^0.183.1",
+		"@types/w3c-generic-sensor": "^1.0.10",
 		"joy-con-webhid": "^0.11.0",
 		"postprocessing": "^6.38.3",
 		"solid-js": "^1.9.5",

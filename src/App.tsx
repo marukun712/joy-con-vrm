@@ -9,6 +9,7 @@ import {
 	DirectionalLight,
 	LoopOnce,
 	LoopRepeat,
+	MathUtils,
 	Mesh,
 	MeshStandardMaterial,
 	NoToneMapping,
@@ -103,6 +104,7 @@ const App: Component = () => {
 	const windows: number[] = [];
 	let frame: number[] = [];
 	let lastAcc = { x: 0, y: 0, z: 0 };
+	let lastRotation = { pitch: 0, roll: 0 };
 	let lastUpdate = Date.now();
 
 	onMount(async () => {
@@ -201,6 +203,25 @@ const App: Component = () => {
 			const delta = timer.getDelta();
 			if (vrm) vrm.update(delta);
 			if (mixer) mixer.update(delta);
+
+			const pitch = lastRotation.pitch;
+			const roll = lastRotation.roll;
+
+			const h = 0.1;
+			const t = h * Math.tan(MathUtils.degToRad(35));
+			const aspect = window.innerWidth / window.innerHeight;
+			const left = -t * aspect - roll * 0.1;
+			const right = t * aspect - roll * 0.1;
+			const bottom = -t + pitch * 0.1;
+			const top = t + pitch * 0.1;
+			camera.projectionMatrix.makePerspective(
+				left,
+				right,
+				top,
+				bottom,
+				0.1,
+				1000,
+			);
 			renderer.render(scene, camera);
 		}
 		renderer.setAnimationLoop(animate);
@@ -218,6 +239,20 @@ const App: Component = () => {
 			z: acc.z ?? 0,
 		};
 	});
+
+	// @ts-expect-error
+	const sensor = new AbsoluteOrientationSensor({
+		frequency: 60,
+		referenceFrame: "device",
+	});
+	sensor.addEventListener("reading", () => {
+		const [x, y, z, w] = sensor.quaternion;
+		const pitch =
+			Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y)) - Math.PI / 2;
+		const roll = Math.asin(2 * (w * y - z * x));
+		lastRotation = { pitch, roll };
+	});
+	sensor.start();
 
 	const startTracking = async () => {
 		setInterval(() => {
