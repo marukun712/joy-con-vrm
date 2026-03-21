@@ -1,5 +1,4 @@
 import { type VRM, VRMLoaderPlugin } from "@pixiv/three-vrm";
-import * as JoyCon from "joy-con-webhid";
 import { type Component, onMount } from "solid-js";
 import {
 	AmbientLight,
@@ -19,7 +18,7 @@ import {
 	Timer,
 	WebGLRenderer,
 } from "three";
-import { GLTFLoader, VRButton } from "three/examples/jsm/Addons.js";
+import { GLTFLoader } from "three/examples/jsm/Addons.js";
 import { type ActorRefFrom, createActor, createMachine } from "xstate";
 import { loadMixamoAnimation } from "./lib/loadMixamoAnimation";
 
@@ -92,8 +91,6 @@ const App: Component = () => {
 
 	let mixer: AnimationMixer;
 	let vrm: VRM;
-	let prev: number | null = null;
-	const alpha = 0.9;
 	let actions: {
 		idle: AnimationAction;
 		jump: AnimationAction;
@@ -101,6 +98,12 @@ const App: Component = () => {
 		react: AnimationAction;
 	};
 	let actor: ActorRefFrom<typeof createMotionMachine>;
+
+	const fps = 60;
+	const windows: number[] = [];
+	let frame: number[] = [];
+	let lastAcc = { x: 0, y: 0, z: 0 };
+	let lastUpdate = Date.now();
 
 	onMount(async () => {
 		const scene = new Scene();
@@ -120,21 +123,7 @@ const App: Component = () => {
 		renderer.outputColorSpace = SRGBColorSpace;
 		renderer.toneMapping = NoToneMapping;
 		renderer.toneMappingExposure = 1.0;
-		renderer.xr.enabled = true;
-
-		const { LookingGlassWebXRPolyfill } = await import(
-			//@ts-expect-error
-			"@lookingglass/webxr"
-		);
-		new LookingGlassWebXRPolyfill({
-			targetY: -0.2,
-			targetZ: 0,
-			targetDiam: 1.8,
-			fovy: (14 * Math.PI) / 180,
-		});
-
 		document.body.appendChild(renderer.domElement);
-		document.body.appendChild(VRButton.createButton(renderer));
 
 		const light = new AmbientLight(0xffffff, 2.0);
 		scene.add(light);
@@ -217,66 +206,72 @@ const App: Component = () => {
 		renderer.setAnimationLoop(animate);
 	});
 
+	window.addEventListener("devicemotion", (event) => {
+		lastUpdate = Date.now();
+
+		const acc = event.acceleration;
+		if (!acc) return;
+
+		lastAcc = {
+			x: acc.x ?? 0,
+			y: acc.y ?? 0,
+			z: acc.z ?? 0,
+		};
+	});
+
 	const startTracking = async () => {
-		await JoyCon.connectJoyCon();
-		const fps = 60;
-		const windows: number[] = [];
-		let frame: number[] = [];
-		setInterval(async () => {
-			for (const joyCon of JoyCon.connectedJoyCons.values()) {
-				if (joyCon.eventListenerAttached) continue;
-				await joyCon.open();
-				await joyCon.enableStandardFullMode();
-				await joyCon.enableIMUMode();
-				await joyCon.enableVibration();
-				// @ts-expect-error
-				joyCon.addEventListener("hidinput", ({ detail }) => {
-					const norm = Math.sqrt(
-						detail.accelerometers[2].x.acc ** 2 +
-							detail.accelerometers[2].y.acc ** 2 +
-							detail.accelerometers[2].z.acc ** 2,
-					);
-					if (prev === null) {
-						prev = norm;
-						return;
-					}
-					prev = alpha * prev + (1 - alpha) * norm;
-					const high = norm - prev;
-
-					if (frame.length === fps * 1) {
-						const rms = Math.sqrt(
-							frame.reduce((a, b) => a + b ** 2, 0) / frame.length,
-						);
-						windows.push(rms);
-						if (windows.length > 4) {
-							windows.shift();
-						}
-						frame = [];
-					}
-
-					if (windows.length >= 4 && windows.slice(-3).every((v) => v > 0.3)) {
-						actor.send({ type: "WALK" });
-					} else if (prev < 0.5) {
-						actor.send({ type: "JUMP" });
-					} else {
-						actor.send({ type: "IDLE" });
-					}
-
-					frame.push(high);
-				});
-				joyCon.eventListenerAttached = true;
+		setInterval(() => {
+			const acc = lastAcc;
+			if (frame.length === fps * 1) {
+				const rms = Math.sqrt(
+					frame.reduce((a, b) => a + b ** 2, 0) / frame.length,
+				);
+				windows.push(rms);
+				if (windows.length > 4) {
+					windows.shift();
+				}
+				frame = [];
 			}
-		}, 2000);
+
+			const now = Date.now();
+			if (now - lastUpdate > 300) {
+				actor.send({ type: "IDLE" });
+				return;
+			}
+
+			if (windows.length >= 4 && windows.slice(-3).every((v) => v > 1.5)) {
+				actor.send({ type: "WALK" });
+			} else if (acc.y > 2.5) {
+				actor.send({ type: "JUMP" });
+			} else {
+				actor.send({ type: "IDLE" });
+			}
+			const norm = Math.sqrt(acc.x ** 2 + acc.y ** 2 + acc.z ** 2);
+			frame.push(norm);
+		}, 1000 / 60);
+	};
+
+	const enterFullscreen = () => {
+		const el = document.documentElement;
+		if (el.requestFullscreen) el.requestFullscreen();
 	};
 
 	return (
-		<button
-			type="button"
-			style={{ position: "absolute" }}
-			onclick={startTracking}
+		<div
+			style={{
+				position: "absolute",
+				display: "flex",
+				gap: "8px",
+				padding: "8px",
+			}}
 		>
-			Start Tracking
-		</button>
+			<button type="button" onclick={startTracking}>
+				Start Tracking
+			</button>
+			<button type="button" onclick={enterFullscreen}>
+				Fullscreen
+			</button>
+		</div>
 	);
 };
 
