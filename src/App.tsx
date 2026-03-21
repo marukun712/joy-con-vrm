@@ -110,7 +110,7 @@ const App: Component = () => {
 			0.1,
 			1000,
 		);
-		camera.position.set(0, 0, 1.4);
+		camera.position.set(0, -0.4, 1.8);
 		const timer = new Timer();
 
 		const renderer = new WebGLRenderer({ antialias: true });
@@ -158,7 +158,7 @@ const App: Component = () => {
 			obj.castShadow = true;
 		});
 		scene.add(vrm.scene);
-		vrm.scene.position.set(0, -1.0, 0);
+		vrm.scene.position.set(0, -1.5, 0);
 
 		const idle = await loadMixamoAnimation("/models/animations/Idle.fbx", vrm);
 		const jump = await loadMixamoAnimation("/models/animations/Jump.fbx", vrm);
@@ -254,7 +254,7 @@ const App: Component = () => {
 						frame = [];
 					}
 
-					if (windows.length >= 4 && windows.slice(-3).every((v) => v > 0.13)) {
+					if (windows.length >= 4 && windows.slice(-3).every((v) => v > 0.3)) {
 						actor.send({ type: "WALK" });
 					} else if (prev < 0.5) {
 						actor.send({ type: "JUMP" });

@@ -6,6 +6,7 @@ export default defineConfig({
 	plugins: [devtools(), solidPlugin()],
 	server: {
 		port: 3000,
+		allowedHosts: ["nixos-develop.tail4618d.ts.net"],
 	},
 	build: {
 		target: "esnext",
