@@ -1,5 +1,5 @@
 import { type VRM, VRMLoaderPlugin } from "@pixiv/three-vrm";
-import { type Component, onMount } from "solid-js";
+import { type Component, createSignal, onMount, Show } from "solid-js";
 import {
 	AmbientLight,
 	type AnimationAction,
@@ -9,11 +9,11 @@ import {
 	DirectionalLight,
 	LoopOnce,
 	LoopRepeat,
-	MathUtils,
 	Mesh,
 	MeshStandardMaterial,
 	NoToneMapping,
 	PerspectiveCamera,
+	Quaternion,
 	Scene,
 	SRGBColorSpace,
 	Timer,
@@ -90,8 +90,12 @@ const App: Component = () => {
 			},
 		});
 
-	let mixer: AnimationMixer;
+	const [started, setStarted] = createSignal(false);
+
+	let interval: number;
+
 	let vrm: VRM;
+	let mixer: AnimationMixer;
 	let actions: {
 		idle: AnimationAction;
 		jump: AnimationAction;
@@ -104,7 +108,7 @@ const App: Component = () => {
 	const windows: number[] = [];
 	let frame: number[] = [];
 	let lastAcc = { x: 0, y: 0, z: 0 };
-	let lastRotation = { pitch: 0, roll: 0 };
+	let lastRotation = { x: 0, y: 0, z: 0 };
 	let lastUpdate = Date.now();
 
 	onMount(async () => {
@@ -204,24 +208,8 @@ const App: Component = () => {
 			if (vrm) vrm.update(delta);
 			if (mixer) mixer.update(delta);
 
-			const pitch = lastRotation.pitch;
-			const roll = lastRotation.roll;
+			box.rotation.set(0, 0, lastRotation.z);
 
-			const h = 0.1;
-			const t = h * Math.tan(MathUtils.degToRad(35));
-			const aspect = window.innerWidth / window.innerHeight;
-			const left = -t * aspect - roll * 0.1;
-			const right = t * aspect - roll * 0.1;
-			const bottom = -t + pitch * 0.1;
-			const top = t + pitch * 0.1;
-			camera.projectionMatrix.makePerspective(
-				left,
-				right,
-				top,
-				bottom,
-				0.1,
-				1000,
-			);
 			renderer.render(scene, camera);
 		}
 		renderer.setAnimationLoop(animate);
@@ -247,15 +235,23 @@ const App: Component = () => {
 	});
 	sensor.addEventListener("reading", () => {
 		const [x, y, z, w] = sensor.quaternion;
-		const pitch =
-			Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y)) - Math.PI / 2;
-		const roll = Math.asin(2 * (w * y - z * x));
-		lastRotation = { pitch, roll };
+		const q = new Quaternion(x, y, z, w);
+		const roll = Math.atan2(
+			2 * (q.w * q.x + q.y * q.z),
+			1 - 2 * (q.x ** 2 + q.y ** 2),
+		);
+		const pitch = Math.asin(2 * (q.w * q.y - q.z * q.x));
+		const yaw = Math.atan2(
+			2 * (q.w * q.z - q.x * q.y),
+			1 - 2 * (q.y ** 2 + q.z ** 2),
+		);
+		lastRotation = { x: roll, y: pitch, z: yaw };
 	});
 	sensor.start();
 
 	const startTracking = async () => {
-		setInterval(() => {
+		if (interval) return;
+		interval = setInterval(() => {
 			const acc = lastAcc;
 			if (frame.length === fps * 1) {
 				const rms = Math.sqrt(
@@ -289,24 +285,27 @@ const App: Component = () => {
 	const enterFullscreen = () => {
 		const el = document.documentElement;
 		if (el.requestFullscreen) el.requestFullscreen();
+		setStarted(true);
 	};
 
 	return (
-		<div
-			style={{
-				position: "absolute",
-				display: "flex",
-				gap: "8px",
-				padding: "8px",
-			}}
-		>
-			<button type="button" onclick={startTracking}>
-				Start Tracking
-			</button>
-			<button type="button" onclick={enterFullscreen}>
-				Fullscreen
-			</button>
-		</div>
+		<Show when={!started()}>
+			<div
+				style={{
+					position: "absolute",
+					display: "flex",
+					gap: "8px",
+					padding: "8px",
+				}}
+			>
+				<button type="button" onclick={startTracking}>
+					Start Tracking
+				</button>
+				<button type="button" onclick={enterFullscreen}>
+					Fullscreen
+				</button>
+			</div>
+		</Show>
 	);
 };
 
