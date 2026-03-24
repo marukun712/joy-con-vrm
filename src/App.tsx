@@ -83,7 +83,7 @@ const App: Component = () => {
 						actions.walk.fadeOut(0.3);
 						actions.react.fadeOut(0.3);
 						actions.fall.fadeOut(0.3);
-						actions.jump.reset().fadeIn(0.1).play();
+						actions.jump.reset().fadeIn(0.3).play();
 						vrm.expressionManager?.setValue("happy", 0);
 						vrm.expressionManager?.setValue("relaxed", 0);
 						vrm.expressionManager?.setValue("sad", 0);
@@ -97,7 +97,7 @@ const App: Component = () => {
 						actions.walk.fadeOut(0.3);
 						actions.react.fadeOut(0.3);
 						actions.jump.fadeOut(0.3);
-						actions.fall.reset().fadeIn(0.1).play();
+						actions.fall.reset().fadeIn(0.3).play();
 						vrm.expressionManager?.setValue("happy", 0);
 						vrm.expressionManager?.setValue("relaxed", 0);
 						vrm.expressionManager?.setValue("surprised", 1);
