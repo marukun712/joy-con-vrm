@@ -173,6 +173,7 @@ const App: Component = () => {
 		});
 		scene.add(vrm.scene);
 		vrm.scene.position.set(0, -1.5, 0);
+		if (vrm.lookAt) vrm.lookAt.target = camera;
 
 		const idle = await loadMixamoAnimation("/models/animations/Idle.fbx", vrm);
 		const jump = await loadMixamoAnimation("/models/animations/Jump.fbx", vrm);
@@ -202,7 +203,7 @@ const App: Component = () => {
 		actions.react.clampWhenFinished = true;
 		actions.fall.setLoop(LoopOnce, 1);
 		actions.fall.clampWhenFinished = true;
-		actions.idle.play();
+
 		const motionMachine = createMotionMachine(actions, vrm);
 		actor = createActor(motionMachine).start();
 
@@ -218,18 +219,39 @@ const App: Component = () => {
 		function onResize() {
 			const width = window.innerWidth;
 			const height = window.innerHeight;
-
 			renderer.setPixelRatio(devicePixelRatio);
 			renderer.setSize(width, height);
-
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
 		}
 
+		let blinkTimer = 0;
+		let blinking = false;
+
 		async function animate() {
 			timer.update();
 			const delta = timer.getDelta();
-			if (vrm) vrm.update(delta);
+			const elapsed = timer.getElapsed();
+
+			if (vrm) {
+				const spineBone = vrm.humanoid.getNormalizedBoneNode("spine");
+				if (spineBone) {
+					spineBone.rotation.x = Math.sin(elapsed * 0.8) * 0.003;
+				}
+
+				blinkTimer -= delta;
+				if (blinkTimer <= 0 && !blinking) {
+					blinking = true;
+					vrm.expressionManager?.setValue("blink", 1);
+					setTimeout(() => {
+						vrm.expressionManager?.setValue("blink", 0);
+						blinking = false;
+						blinkTimer = 2 + Math.random() * 3;
+					}, 120);
+				}
+
+				vrm.update(delta);
+			}
 			if (mixer) mixer.update(delta);
 
 			renderer.render(scene, camera);
@@ -239,10 +261,8 @@ const App: Component = () => {
 
 	window.addEventListener("devicemotion", (event) => {
 		lastUpdate = Date.now();
-
 		const acc = event.acceleration;
 		if (!acc) return;
-
 		lastAcc = {
 			x: acc.x ?? 0,
 			y: acc.y ?? 0,
