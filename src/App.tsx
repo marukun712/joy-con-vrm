@@ -29,7 +29,6 @@ const App: Component = () => {
 			walk: AnimationAction;
 			jump: AnimationAction;
 			react: AnimationAction;
-			fall: AnimationAction;
 		},
 		vrm: VRM,
 	) =>
@@ -42,7 +41,6 @@ const App: Component = () => {
 						actions.walk.fadeOut(0.3);
 						actions.jump.fadeOut(0.3);
 						actions.react.fadeOut(0.3);
-						actions.fall.fadeOut(0.3);
 						actions.idle.reset().fadeIn(0.3).play();
 						vrm.expressionManager?.setValue("happy", 0.2);
 						vrm.expressionManager?.setValue("surprised", 0);
@@ -55,7 +53,6 @@ const App: Component = () => {
 					entry: () => {
 						actions.idle.fadeOut(0.3);
 						actions.jump.fadeOut(0.3);
-						actions.fall.fadeOut(0.3);
 						actions.walk.reset().fadeIn(0.3).play();
 						vrm.expressionManager?.setValue("relaxed", 0);
 						vrm.expressionManager?.setValue("surprised", 0);
@@ -68,7 +65,6 @@ const App: Component = () => {
 					entry: () => {
 						actions.idle.fadeOut(0.3);
 						actions.walk.fadeOut(0.3);
-						actions.fall.fadeOut(0.3);
 						actions.react.reset().fadeIn(0.3).play();
 						vrm.expressionManager?.setValue("happy", 0.2);
 						vrm.expressionManager?.setValue("relaxed", 1);
@@ -82,7 +78,6 @@ const App: Component = () => {
 						actions.idle.fadeOut(0.3);
 						actions.walk.fadeOut(0.3);
 						actions.react.fadeOut(0.3);
-						actions.fall.fadeOut(0.3);
 						actions.jump.reset().fadeIn(0.3).play();
 						vrm.expressionManager?.setValue("happy", 0);
 						vrm.expressionManager?.setValue("relaxed", 0);
@@ -90,20 +85,6 @@ const App: Component = () => {
 						vrm.expressionManager?.setValue("surprised", 1);
 					},
 					on: { JUMP_END: "idle" },
-				},
-				fall: {
-					entry: () => {
-						actions.idle.fadeOut(0.3);
-						actions.walk.fadeOut(0.3);
-						actions.react.fadeOut(0.3);
-						actions.jump.fadeOut(0.3);
-						actions.fall.reset().fadeIn(0.3).play();
-						vrm.expressionManager?.setValue("happy", 0);
-						vrm.expressionManager?.setValue("relaxed", 0);
-						vrm.expressionManager?.setValue("surprised", 1);
-						vrm.expressionManager?.setValue("sad", 0);
-					},
-					on: { FALL_END: "idle" },
 				},
 			},
 		});
@@ -119,7 +100,6 @@ const App: Component = () => {
 		jump: AnimationAction;
 		walk: AnimationAction;
 		react: AnimationAction;
-		fall: AnimationAction;
 	};
 	let actor: ActorRefFrom<typeof createMotionMachine>;
 
@@ -127,7 +107,6 @@ const App: Component = () => {
 	const windows: number[] = [];
 	let frame: number[] = [];
 	let lastAcc = { x: 0, y: 0, z: 0 };
-	let deviceGamma = 0;
 	let lastUpdate = Date.now();
 
 	onMount(async () => {
@@ -185,7 +164,6 @@ const App: Component = () => {
 			"/models/animations/Reacting.fbx",
 			vrm,
 		);
-		const fall = await loadMixamoAnimation("/models/animations/Fall.fbx", vrm);
 		mixer = new AnimationMixer(vrm.scene);
 
 		actions = {
@@ -193,7 +171,6 @@ const App: Component = () => {
 			jump: mixer.clipAction(jump),
 			walk: mixer.clipAction(walk),
 			react: mixer.clipAction(react),
-			fall: mixer.clipAction(fall),
 		};
 		actions.idle.setLoop(LoopRepeat, Infinity);
 		actions.jump.setLoop(LoopOnce, 1);
@@ -201,8 +178,6 @@ const App: Component = () => {
 		actions.walk.setLoop(LoopRepeat, Infinity);
 		actions.react.setLoop(LoopOnce, 1);
 		actions.react.clampWhenFinished = true;
-		actions.fall.setLoop(LoopOnce, 1);
-		actions.fall.clampWhenFinished = true;
 
 		const motionMachine = createMotionMachine(actions, vrm);
 		actor = createActor(motionMachine).start();
@@ -210,7 +185,6 @@ const App: Component = () => {
 		mixer.addEventListener("finished", (e) => {
 			if (e.action === actions.jump) actor.send({ type: "JUMP_END" });
 			if (e.action === actions.react) actor.send({ type: "REACT_END" });
-			if (e.action === actions.fall) actor.send({ type: "FALL_END" });
 		});
 
 		onResize();
@@ -270,10 +244,6 @@ const App: Component = () => {
 		};
 	});
 
-	window.addEventListener("deviceorientation", (e) => {
-		deviceGamma = e.gamma ?? 0;
-	});
-
 	const startTracking = async () => {
 		if (interval) return;
 		interval = setInterval(() => {
@@ -295,12 +265,7 @@ const App: Component = () => {
 				return;
 			}
 
-			if (Math.abs(deviceGamma) > 80) {
-				actor.send({ type: "FALL" });
-			} else if (
-				windows.length >= 4 &&
-				windows.slice(-3).every((v) => v > 1.5)
-			) {
+			if (windows.length >= 4 && windows.slice(-3).every((v) => v > 1.5)) {
 				actor.send({ type: "WALK" });
 			} else if (acc.y > 2.5) {
 				actor.send({ type: "JUMP" });
